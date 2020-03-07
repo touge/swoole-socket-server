@@ -14,9 +14,6 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 class WebSocketServices
 {
     public function server(){
-
-//        JWT::setRequest($request);
-//        JWTAuth::parseToken();
         $this->initialization();
     }
 
