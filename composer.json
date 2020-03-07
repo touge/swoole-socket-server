@@ -1,0 +1,31 @@
+{
+    "name": "touge/swoole-socket-server",
+    "description": "description...",
+    "type": "library",
+    "keywords": ["laravel socket", "swoole"],
+    "homepage": "https://github.com/touge/swoole-socket-server",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Nick Yuan",
+            "email": "lon.y@qq.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.0.0",
+        "tymon/jwt-auth": "1.*@rc"
+    },
+    "autoload": {
+        "psr-4": {
+            "Touge\\SwooleSocketServer\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Touge\\SwooleSocketServer\\ModuleServiceProvider"
+            ]
+
+        }
+    }
+}
