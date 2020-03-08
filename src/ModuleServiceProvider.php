@@ -32,8 +32,6 @@ class ModuleServiceProvider extends ServiceProvider
         $this->app['config']->set('database.redis.touge_live', config('touge-swoole-server.redis'));
 
 
-        $this->mapApiRoutes();
-
         /**
          * 发布资源内容
          */
@@ -51,24 +49,6 @@ class ModuleServiceProvider extends ServiceProvider
         $this->app->register(WebSocketServiceProvider::class);
     }
 
-    /**
-     * Define the "api" routes for the module.
-     *
-     * These routes are typically stateless.
-     *
-     * @return void
-     */
-    protected function mapApiRoutes()
-    {
-        Route::group([
-            'middleware' => 'api',
-            'namespace'  => $this->namespace,
-            'prefix'     => 'api',
-            'as'=> 'swoole.'
-        ], function () {
-            require __DIR__ . '/../routes/api.php';
-        });
-    }
 
 
     /**
