@@ -9,28 +9,251 @@
 namespace Touge\SwooleSocketServer\Services;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class WebSocketServices
 {
-    public function server(){
-        $this->initialization();
+    protected $socket_server;
+
+    protected $redis_server;
+    /**
+     * 初始化服务器
+     */
+    public function run(){
+        $this->initialization()->listener()->server_start();
+    }
+
+    /**
+     * @return mixed
+     */
+    protected function server_start(){
+        return $this->socket_server->start();
+    }
+
+    /**
+     * @return $this
+     */
+    protected function listener(){
+        /**
+         * 链接成功
+         */
+        $this->socket_server->on('open', function (\Swoole\WebSocket\Server $server, $frame) {
+            $this->on_open( $frame);
+        });
+
+        $this->socket_server->on('message', function (\Swoole\WebSocket\Server $server, $frame){
+            $this->on_message($server, $frame);
+        });
+        $this->socket_server->on('close', function(\Swoole\WebSocket\Server $server, $fd){
+            $this->on_close($server, $fd);
+        });
+        $this->socket_server->on('request', function (Swoole\Http\Request $request, Swoole\Http\Response $response) {
+            //see http://wiki.swoole.com/#/websocket_server
+        });
+        return $this;
+    }
+
+    /**
+     * @param $frame
+     */
+    protected function on_open($frame){
+        $response_message= $this->compress_message('connect_success', ["id"=>$frame->fd]);
+        $this->socket_server->push($frame->fd, $response_message);
+    }
+
+    /**
+     * @param $server
+     * @param $fd
+     */
+    protected function on_close($server, $fd)
+    {
+        echo "client-{$fd} is closed\n";
+    }
+
+    /**
+     * 删除用户
+     * @param $room
+     * @param $user_id
+     */
+    protected function delRoomUser($room, $user_id){
+        $this->redis_server->hdel($room, $user_id);
+    }
+
+    /**
+     * 用户加入到redis hget房间列表中
+     * @param $user
+     */
+    protected function userApplyRoom($user)
+    {
+        $this->redis_server->hset($user['room'], $user['id'], json_encode($user));
+    }
+
+    /**
+     * 向客户端应答消息
+     * @param $fd 客户ID
+     * @param $cmd 应答信令
+     * @param $data 应答数据
+     */
+    protected function reply_message($fd, $cmd ,$data)
+    {
+        $replay_data= $this->compress_message($cmd, $data);
+        $this->socket_server->push($fd, $replay_data);
     }
 
 
     /**
-     * @param $string
+     * 获得用户信息
+     *
+     * @param $room
+     * @param $user_id
      * @return mixed
      */
-    protected function json2array($string){
-        return json_decode($string, TRUE);
+    protected function getRdsUser($room, $user_id){
+        return $this->redis_server->hget($room, $user_id);
     }
 
-    protected $server;
+    /**
+     * Redis 指定房间的用户列表
+     *
+     * @param $room
+     * @return mixed
+     */
+    protected function getRdsRoomUsers($room){
+        return $this->redis_server->hvals($room);
 
-    protected static $CMD= [
-        'verify','join'
-    ];
+    }
+
+    /**
+     * Redis 得到指定房间的fd列表
+     * @param $room
+     * @return array
+     */
+    protected function getRdsRoomFds($room){
+        $room_users= $this->getRdsRoomUsers($room);
+
+        $room_fds= [];
+        foreach($room_users as $room_user){
+            $user= json_decode($room_user, true);
+            array_push($room_fds, $user['fd']);
+        }
+        return $room_fds;
+    }
+
+    /**
+     * 消息广播
+     * @param $fds
+     * @param $data
+     * @param string $cmd
+     */
+    protected function broadcast($fds ,$data ,$cmd='public')
+    {
+        foreach ($this->socket_server->connections as $fd){
+            if(in_array($fd, $fds)){
+                $this->reply_message($fd, $cmd ,$data);
+            }
+        }
+    }
+
+
+    /**
+     * 组织公共消息
+     *
+     * @param string $cmd
+     * @param $data
+     */
+    protected function __public($data){
+        $user_id= $data['sender_id'];
+        $room= $data['room'];
+        $rds_user= $this->getRdsUser($room, $user_id);
+        $fromUser= json_decode($rds_user ,TRUE);
+        $room_fds= $this->getRdsRoomFds($fromUser['room']);
+
+        $options= [
+            "sender"=> ['id'=>$user_id, 'name'=> $fromUser['name'] ,'identity'=> $fromUser['identity']],
+            "message"=> $data['message']
+        ];
+        $this->broadcast($room_fds, $options, 'public');
+    }
+
+
+    /**
+     * 验明正身
+     */
+    protected function __verify($data ,$fd)
+    {
+        $token= $data['token'];
+        $room= $data['room'];
+
+        $user= $this->getMember($token);
+
+        $user['room']= $room;
+        $user['fd']= $fd;
+
+        $this->userApplyRoom($user);
+
+        $room_fds= $this->getRdsRoomFds($user['room']);
+
+        $data= [
+            "sender"=> ['id'=>0, 'name'=> '系统'],
+            "message"=> "欢迎 {$user['name']} 的到来！"
+        ];
+        $this->broadcast($room_fds, $data ,'broadcast');
+    }
+
+
+    /**
+     * 离开了，再见
+     * @param $data
+     */
+    protected function __leave($data, $fd){
+        $user_id= $data['sender_id'];
+        $room= $data['room'];
+
+        $rds_user= $this->getRdsUser($room, $user_id);
+
+
+        $fromUser= json_decode($rds_user ,TRUE);
+
+
+        $room_fds= $this->getRdsRoomFds($fromUser['room']);
+
+        $data= [
+            "sender"=> ['id'=>0, 'name'=> '系统'],
+            "message"=> "{$fromUser['name']} 离开了！"
+        ];
+        $this->broadcast($room_fds, $data ,'broadcast');
+
+        //关闭他的链接
+        $this->socket_server->close($fd);
+
+        //删除他的用户信息
+        $this->delRoomUser($room, $user_id);
+
+    }
+
+    /**
+     * 收到消息时的处理
+     *
+     * @param $server
+     * @param $frame
+     */
+    protected function on_message($server, $frame){
+        $response= $this->unpack_message($frame->data);
+        switch ($response['cmd']){
+            case "verify":
+                $this->__verify($response['data'], $frame->fd);
+            break;
+            case 'public':
+                $this->__public($response['data']);
+                break;
+            case 'leave'://用户离开，关闭当前链接并删除用户
+                $this->__leave($response['data'], $frame->fd);
+            break;
+        }
+    }
+
+
 
     /**
      * 回复的消息
@@ -56,19 +279,32 @@ class WebSocketServices
         return json_decode($data, TRUE);
     }
 
-    protected $members= [];
+
 
     /**
-     * 向客户端应答消息
-     * @param $fd 客户ID
-     * @param $cmd 应答信令
-     * @param $data 应答数据
+     * 用户加入聊天室
+     *
+     * @param $member
+     * @param $room
+     * @param $fd
+     * @return bool
      */
-    protected function reply_message($fd, $cmd ,$data)
+    protected function memberApplyRooms($member ,$room ,$fd)
     {
-        $replay_data= $this->compress_message($cmd, $data);
-        $this->server->push($fd, $replay_data);
+        $member_id= $member['id'];
+
+        $member['fd']= $fd;
+        $member['room']= $room;
+        $this->members[$member_id]= $member;
+
+        if( !in_array($room, $this->rooms) ){
+            $this->rooms[$room][]= $member;
+        }else{
+            array_push($this->rooms[$room], $member);
+        }
     }
+
+
 
     /**
      * 初始化并启动websocket
@@ -76,64 +312,13 @@ class WebSocketServices
      * @return $this
      */
     protected function initialization(){
-        $this->server = new \Swoole\WebSocket\Server("0.0.0.0", 9501);
+        $this->redis_server= Redis::connection('touge_live');
 
-        /**
-         * 链接成功
-         */
-        $this->server->on('open', function (\Swoole\WebSocket\Server $server, $frame) {
-            $response_message= $this->compress_message('connect_success', ["id"=>$frame->fd]);
-            $server->push($frame->fd, $response_message);
-        });
-
-        /**
-         * 当收到消息
-         */
-        $this->server->on('message', function (\Swoole\WebSocket\Server $server, $frame) {
-            try{
-                $message= $this->unpack_message($frame->data);
-                switch ($message['cmd']){
-                    case "verify":
-                        //将当前用户加入到聊天用户列表中
-                        $token= $message['data']['token'];
-                        $request= $this->applyTokenToRequest($token);
-                        $member= $this->getMember($request);
-                        array_push($this->members, [$frame->fd=> $member]);
-
-                        $data= ["message"=> "欢迎 {$member['name']} 的到来！"];
-                        foreach($server->connections as $fd)
-                        {
-                            $this->reply_message($fd,'broadcast', $data);
-                        }
-                    break;
-                    case "public":
-                        $data= $message["data"]["message"];
-                        foreach($server->connections as $fd){
-                            $this->reply_message($fd, 'public', $data);
-                        }
-                        break;
-                }
-            }catch (\Exception $exception){
-                echo $exception->getMessage();
-            }
-        });
-
-        $this->server->on('close', function ($ser, $fd) {
-            echo "client {$fd} closed\n";
-        });
-
-        $this->server->on('request', function ($request, $response) {
-            // 接收http请求从get获取message参数的值，给用户推送
-            // $this->server->connections 遍历所有websocket连接用户的fd，给所有用户推送
-            foreach ($this->server->connections as $fd) {
-                // 需要先判断是否是正确的websocket连接，否则有可能会push失败
-                if ($this->server->isEstablished($fd)) {
-                    $this->server->push($fd, $request->get['message']);
-                }
-            }
-        });
-        $this->server->start();
+        $config_socket= config('touge-swoole-server.socket');
+        $this->socket_server = new \Swoole\WebSocket\Server($config_socket['host'], $config_socket['port']);
+        return $this;
     }
+
 
 
     /**
@@ -151,14 +336,20 @@ class WebSocketServices
 
 
     /**
-     * @param Request $request
+     * @param $token
      * @return mixed
      */
-    protected function getMember(Request $request){
+    protected function getMember($token){
+
+        $request= $this->applyTokenToRequest($token);
         JWTAuth::setRequest($request)->parseToken();
         $user = JWTAuth::parseToken()->authenticate();
 
-        return ['id'=> $user->id, 'name'=> $user->name];
+        return [
+            'id'=> $user->id,
+            'name'=> $user->name,
+            'identity'=> $user->identity,
+        ];
 
     }
 }

@@ -28,7 +28,7 @@ class SwooleServerCommand extends Command
      */
     public function handle()
     {
-        WebSocket::server();
+        WebSocket::run();
 
 //        $ws = new Server("0.0.0.0", 9502);
 //        //监听WebSocket连接打开事件

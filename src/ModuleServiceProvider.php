@@ -29,8 +29,6 @@ class ModuleServiceProvider extends ServiceProvider
         if( !file_exists(config_path($this->config_file))){
             $this->loadConfig();
         }
-
-//        $this->loadTranslationsFrom(__DIR__.'/../resource/lang', 'JwtAuth');
         $this->mapApiRoutes();
 
         /**
@@ -38,7 +36,6 @@ class ModuleServiceProvider extends ServiceProvider
          */
         if ($this->app->runningInConsole()) {
             $this->publishes([__DIR__.'/../config' => config_path()], 'touge-swoole-server-config');
-//            $this->publishes([__DIR__.'/../resource/lang' => resource_path('lang')], 'touge-swoole-server-lang');
         }
     }
 
@@ -79,5 +76,7 @@ class ModuleServiceProvider extends ServiceProvider
         $key = substr($this->config_file, 0, -4);
         $full_path= __DIR__ . '/../config/' . $this->config_file;
         $this->app['config']->set($key, array_merge_recursive(config($key, []), require $full_path));
+
+        $this->app['config']->set('database.redis.touge_live', config('touge-swoole-server.redis'));
     }
 }

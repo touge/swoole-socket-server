@@ -13,7 +13,8 @@
     ],
     "require": {
         "php": ">=7.0.0",
-        "tymon/jwt-auth": "1.*@rc"
+        "tymon/jwt-auth": "1.*@rc",
+        "predis/predis": "^1.1"
     },
     "autoload": {
         "psr-4": {

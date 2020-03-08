@@ -6,24 +6,14 @@
  * Time: 09:27
  */
 return [
-    'auth' => [
-        'defaults'=> [
-            'guard'=> 'laravel-jwt'
-        ],
-        'guards' => [
-            'laravel-jwt' => [
-                'driver'=> 'jwt',
-                'provider'=> 'jwt-member'
-            ],
-        ],
-        'providers' => [
-            'jwt-member'=>[
-                'driver' => 'eloquent',
-                'model'=>\Touge\JwtAuth\Models\JwtMember::class
-            ],
-        ],
+    'redis'=> [
+        'host' => env('REDIS_HOST', '127.0.0.1'),
+        'port'=> env('REDIS_PORT', 6379),
+        'password'=> env('REDIS_PASSWORD', null),
+        'database'=> 0
     ],
-    'database'=> [
-        'auth_table'=> 'customer_school_members',
+    'socket'=>[
+        'host'=> '0.0.0.0',
+        'port'=> '9501',
     ]
 ];
