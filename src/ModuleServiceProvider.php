@@ -29,6 +29,9 @@ class ModuleServiceProvider extends ServiceProvider
         if( !file_exists(config_path($this->config_file))){
             $this->loadConfig();
         }
+        $this->app['config']->set('database.redis.touge_live', config('touge-swoole-server.redis'));
+
+
         $this->mapApiRoutes();
 
         /**
@@ -77,6 +80,5 @@ class ModuleServiceProvider extends ServiceProvider
         $full_path= __DIR__ . '/../config/' . $this->config_file;
         $this->app['config']->set($key, array_merge_recursive(config($key, []), require $full_path));
 
-        $this->app['config']->set('database.redis.touge_live', config('touge-swoole-server.redis'));
     }
 }
