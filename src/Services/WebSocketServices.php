@@ -21,6 +21,7 @@ class WebSocketServices
      * 初始化服务器
      */
     public function run(){
+        $this->output("Starting service...");
         $this->initialization()->listener()->server_start();
     }
 
@@ -28,6 +29,8 @@ class WebSocketServices
      * @return mixed
      */
     protected function server_start(){
+        sleep(1);
+        $this->output('Websocket start successful.');
         return $this->socket_server->start();
     }
 
@@ -35,6 +38,9 @@ class WebSocketServices
      * @return $this
      */
     protected function listener(){
+        sleep(1);
+        $this->output("lsnrctl start");
+
         /**
          * 链接成功
          */
@@ -311,12 +317,38 @@ class WebSocketServices
      *
      * @return $this
      */
-    protected function initialization(){
-        $this->redis_server= Redis::connection('touge_live');
+    protected function initialization()
+    {
+        $this->output("Initialize system configuration...");
+
+        sleep(1);
+        try{
+            $redis_config= config('database.redis.touge_live');
+            $message= "Link to redis server. host: {$redis_config['host']} ,port: {$redis_config['port']}";
+            $this->output($message);
+            $this->redis_server= Redis::connection('touge_live');
+        }catch (\Exception $exception){
+            die($exception->getMessage());
+        }
+
+        sleep(1);
 
         $config_socket= config('touge-swoole-server.socket');
+        $message= "Instantiate websocket server. host: {$config_socket['host']}, port: {$config_socket['port']}";
+        $this->output($message);
+
         $this->socket_server = new \Swoole\WebSocket\Server($config_socket['host'], $config_socket['port']);
+
         return $this;
+    }
+
+    /**
+     * 输入到控制台
+     * @param $message
+     */
+    protected function output($message)
+    {
+        echo  date('Y-m-d H:i:s') . " -- " .$message . "\n";
     }
 
 

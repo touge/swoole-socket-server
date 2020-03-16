@@ -9,9 +9,7 @@
 namespace Touge\SwooleSocketServer;
 
 
-use Illuminate\Support\Arr;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Route;
 use Touge\SwooleSocketServer\Providers\ConsoleServiceProvider;
 use Touge\SwooleSocketServer\Providers\WebSocketServiceProvider;
 
@@ -59,6 +57,5 @@ class ModuleServiceProvider extends ServiceProvider
         $key = substr($this->config_file, 0, -4);
         $full_path= __DIR__ . '/../config/' . $this->config_file;
         $this->app['config']->set($key, array_merge_recursive(config($key, []), require $full_path));
-
     }
 }
