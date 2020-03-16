@@ -10,10 +10,13 @@ namespace Touge\SwooleSocketServer\Services;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
+use Touge\SwooleSocketServer\Traits\ColorOutput;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class WebSocketServices
 {
+    use ColorOutput;
+
     protected $socket_server;
 
     protected $redis_server;
@@ -21,7 +24,7 @@ class WebSocketServices
      * 初始化服务器
      */
     public function run(){
-        $this->output("Starting service...");
+        $this->info('Starting service...');
         $this->initialization()->listener()->server_start();
     }
 
@@ -30,7 +33,7 @@ class WebSocketServices
      */
     protected function server_start(){
         sleep(1);
-        $this->output('Websocket start successful.');
+        $this->info('Websocket start successful.');
         return $this->socket_server->start();
     }
 
@@ -39,7 +42,7 @@ class WebSocketServices
      */
     protected function listener(){
         sleep(1);
-        $this->output("lsnrctl start");
+        $this->info("lsnrctl start");
 
         /**
          * 链接成功
@@ -74,7 +77,7 @@ class WebSocketServices
      */
     protected function on_close($server, $fd)
     {
-        echo "client-{$fd} is closed\n";
+        $this->error("client-{$fd} is closed");
     }
 
     /**
@@ -83,7 +86,11 @@ class WebSocketServices
      * @param $user_id
      */
     protected function delRoomUser($room, $user_id){
-        $this->redis_server->hdel($room, $user_id);
+        try{
+            $this->redis_server->hdel($room, $user_id);
+        }catch (\Exception $exception){
+            die(__LINE__);
+        }
     }
 
     /**
@@ -92,7 +99,13 @@ class WebSocketServices
      */
     protected function userApplyRoom($user)
     {
-        $this->redis_server->hset($user['room'], $user['id'], json_encode($user));
+        try{
+            $this->redis_server->hset($user['room'], $user['id'], json_encode($user));
+            $this->warning($user['name'] . ' join '. $user['room']);
+        }catch (\Exception $exception){
+            $this->socket_server->stop();
+            return $this->error($exception->getMessage());
+        }
     }
 
     /**
@@ -116,7 +129,12 @@ class WebSocketServices
      * @return mixed
      */
     protected function getRdsUser($room, $user_id){
-        return $this->redis_server->hget($room, $user_id);
+        try{
+            return $this->redis_server->hget($room, $user_id);
+        }catch (\Exception $exception){
+            $this->socket_server->stop();
+            return $this->error($exception->getMessage());die;
+        }
     }
 
     /**
@@ -126,7 +144,12 @@ class WebSocketServices
      * @return mixed
      */
     protected function getRdsRoomUsers($room){
-        return $this->redis_server->hvals($room);
+        try{
+            return $this->redis_server->hvals($room);
+        }catch (\Exception $exception){
+            $this->socket_server->stop();
+            return $this->error($exception->getMessage());die;
+        }
 
     }
 
@@ -139,7 +162,8 @@ class WebSocketServices
         $room_users= $this->getRdsRoomUsers($room);
 
         $room_fds= [];
-        foreach($room_users as $room_user){
+        foreach((array)$room_users as $room_user){
+            $this->socket_server->stop();
             $user= json_decode($room_user, true);
             array_push($room_fds, $user['fd']);
         }
@@ -195,7 +219,6 @@ class WebSocketServices
 
         $user['room']= $room;
         $user['fd']= $fd;
-
         $this->userApplyRoom($user);
 
         $room_fds= $this->getRdsRoomFds($user['room']);
@@ -220,8 +243,6 @@ class WebSocketServices
 
 
         $fromUser= json_decode($rds_user ,TRUE);
-
-
         $room_fds= $this->getRdsRoomFds($fromUser['room']);
 
         $data= [
@@ -311,6 +332,22 @@ class WebSocketServices
     }
 
 
+    /**
+     *
+     */
+    protected function connection_redis_serve(){
+        sleep(1);
+        try{
+            $redis_config= config('database.redis.touge_live');
+            $message= "Link to redis server. host: {$redis_config['host']} ,port: {$redis_config['port']}";
+            $this->info($message);
+            $this->redis_server= Redis::connection('touge_live');
+            $this->redis_server->get('touge');
+        }catch (\Exception $exception){
+            $this->error($exception->getMessage());die;
+        }
+
+    }
 
     /**
      * 初始化并启动websocket
@@ -319,39 +356,16 @@ class WebSocketServices
      */
     protected function initialization()
     {
-        $this->output("Initialize system configuration...");
+        $this->info("Initialize system configuration...");
+        $this->connection_redis_serve();
 
         sleep(1);
-        try{
-            $redis_config= config('database.redis.touge_live');
-            $message= "Link to redis server. host: {$redis_config['host']} ,port: {$redis_config['port']}";
-            $this->output($message);
-            $this->redis_server= Redis::connection('touge_live');
-        }catch (\Exception $exception){
-            die($exception->getMessage());
-        }
-
-        sleep(1);
-
         $config_socket= config('touge-swoole-server.socket');
         $message= "Instantiate websocket server. host: {$config_socket['host']}, port: {$config_socket['port']}";
-        $this->output($message);
-
+        $this->info($message);
         $this->socket_server = new \Swoole\WebSocket\Server($config_socket['host'], $config_socket['port']);
-
         return $this;
     }
-
-    /**
-     * 输入到控制台
-     * @param $message
-     */
-    protected function output($message)
-    {
-        echo  date('Y-m-d H:i:s') . " -- " .$message . "\n";
-    }
-
-
 
     /**
      * 生成一个request，并将token放入到header中

@@ -1,0 +1,1 @@
+kill -9 $(ps aux|grep 'touge:swoole-server'|grep -v grep|awk '{print $2}')
