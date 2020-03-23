@@ -13,7 +13,7 @@ return [
         'database'=> 0
     ],
     'socket'=>[
-        'host'=> '0.0.0.0',
-        'port'=> '888',
+        'host'=> env('SWOOLE_SOCKET_SERVER_HOST', '0.0.0.0'),
+        'port'=> env('SWOOLE_SOCKET_SERVER_PORT' ,'888'),
     ]
 ];
